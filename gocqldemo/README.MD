@@ -1,0 +1,1 @@
+# [goctl examples](https://pkg.go.dev/github.com/gocql/gocql#readme-example)
