@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/gocql/gocql"
@@ -61,34 +60,17 @@ func finder(connString string) {
 		AddItem(tables, 0, 1, false).
 		AddItem(columns, 0, 3, false)
 
-	// We keep one connection pool per database.
-	dbMutex := sync.Mutex{}
-	sessions := make(map[string]*gocql.Session)
+	cluster := gocql.NewCluster(connString)
+	cluster.Consistency = gocql.Quorum
+	session, err := cluster.CreateSession()
+	if err != nil {
+		panic(err)
+	}
 	GetSession := func(keyspace string) *gocql.Session {
-		// Connect to a new database.
-		dbMutex.Lock()
-		defer dbMutex.Unlock()
-		if db, ok := sessions[keyspace]; ok {
-			return db
-		}
-
-		cluster := gocql.NewCluster(connString)
-		cluster.Keyspace = keyspace
-		cluster.Consistency = gocql.Quorum
-
-		session, err := cluster.CreateSession()
-		if err != nil {
-			panic(err)
-		}
-		sessions[keyspace] = session
 		return session
 	}
 
 	// Get a list of all databases.
-	cluster := gocql.NewCluster(connString)
-	// cluster.Keyspace = "example"
-	cluster.Consistency = gocql.Quorum
-
 	generalKeyspace, err := cluster.CreateSession()
 	if err != nil {
 		panic(err)
