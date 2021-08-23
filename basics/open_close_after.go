@@ -25,11 +25,20 @@ func (s square) area() float64 {
 	return s.length * s.length
 }
 
+type triangle struct {
+	height float64
+	base   float64
+}
+
+func (t triangle) area() float64 {
+	return t.height * t.base / 2
+}
+
 type calculator struct {
 }
 
-// signature passing shape in, so to add new shape, for example, rectangle, just adding the shape, no need to change sum method
-func (c calculator) sum(shapes ...shape) float64 {
+// signature passing shape in, so to add new shape, for example, rectangle, just adding the shape, no need to change areaSum method
+func (c calculator) areaSum(shapes ...shape) float64 {
 	var sum float64
 
 	for _, shape := range shapes {
@@ -41,7 +50,8 @@ func (c calculator) sum(shapes ...shape) float64 {
 func main() {
 	c := circle{5}
 	s := square{10}
+	t := triangle{10, 6}
 	calculator := calculator{}
-	sum := calculator.sum(c, s)
-	fmt.Printf("Total area is: %f\n", sum)
+	sum := calculator.areaSum(c, s, t)
+	fmt.Printf("Area sum is: %f\n", sum)
 }
