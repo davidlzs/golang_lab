@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
+	"strconv"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/gocql/gocql"
@@ -190,7 +192,8 @@ func finder(connString string) {
 
 			// When the user selects a table, show its content.
 			tables.SetSelectedFunc(func(i int, tableName string, t string, s rune) {
-				content(db, keyspaceName, tableName)
+				session := GetSession(keyspaceName)
+				content(session, keyspaceName, tableName)
 			})
 		})
 	}
@@ -205,12 +208,12 @@ func finder(connString string) {
 }
 
 // Shows the contents of the given table.
-func content(db *gocql.Session, dbName, tableName string) {
+func content(db *gocql.Session, keyspaceName, tableName string) {
 	finderFocus = app.GetFocus()
 
 	// If this page already exists, just show it.
-	if pages.HasPage(dbName + "." + tableName) {
-		pages.SwitchToPage(dbName + "." + tableName)
+	if pages.HasPage(keyspaceName + "." + tableName) {
+		pages.SwitchToPage(keyspaceName + "." + tableName)
 		return
 	}
 
@@ -225,98 +228,90 @@ func content(db *gocql.Session, dbName, tableName string) {
 		SetTitle(fmt.Sprintf(`Contents of table "%s"`, tableName))
 
 	// How many rows does this table have?
-	// var rowCount int
-	// err := db.QueryRow(fmt.Sprintf("select count(*) from %s", tableName)).Scan(&rowCount)
-	// if err != nil {
-	// 	panic(err)
-	// }
+	var rowCount int
+	fullyQualifiedTableName := fmt.Sprintf("%s.%s", keyspaceName, tableName)
+	ctx := context.Background()
+	err := db.Query(fmt.Sprintf("select count(*) from %s", fullyQualifiedTableName)).
+		WithContext(ctx).Consistency(gocql.One).Scan(&rowCount)
+	if err != nil {
+		panic(err)
+	}
 
-	// // Load a batch of rows.
-	// loadRows := func(offset int) {
-	// 	// rows, err := db.Query("select * from student limit $1, $2", 1, 2)
-	// 	stat, err := db.Prepare(fmt.Sprintf("select * from %s limit ?, ?", tableName))
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	defer stat.Close()
+	// Load a batch of rows.
+	loadRows := func(offset int) {
 
-	// 	rows, err := stat.Query(offset, batchSize)
-	// 	// rows, err := db.Query("select * from student")
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	defer rows.Close()
+		iter := db.Query(fmt.Sprintf(`select persistence_id from %s`, fullyQualifiedTableName)).
+			WithContext(ctx).Iter()
+		columns := iter.Columns()
+		for index, columnInfo := range columns {
+			name := columnInfo.Name
+			// fmt.Fprintf(w, "%s (%s)", columnInfo.Name, columnInfo.TypeInfo)
+			table.SetCell(0, index, &tview.TableCell{Text: name, Align: tview.AlignCenter, Color: tcell.ColorYellow})
+		}
 
-	// 	// The first row in the table is the list of column names.
-	// 	columnNames, err := rows.Columns()
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	for index, name := range columnNames {
-	// 		table.SetCell(0, index, &tview.TableCell{Text: name, Align: tview.AlignCenter, Color: tcell.ColorYellow})
-	// 	}
+		// The first row in the table is the list of column names.
+		// columnNames, err := rows.Columns()
+		// if err != nil {
+		// 	panic(err)
+		// }
+		// for index, name := range columnNames {
+		// 	table.SetCell(0, index, &tview.TableCell{Text: name, Align: tview.AlignCenter, Color: tcell.ColorYellow})
+		// }
 
-	// 	// Read the rows.
-	// 	columns := make([]interface{}, len(columnNames))
-	// 	columnPointers := make([]interface{}, len(columns))
-	// 	for index := range columnPointers {
-	// 		columnPointers[index] = &columns[index]
-	// 	}
-	// 	for rows.Next() {
-	// 		// Read the columns.
-	// 		err := rows.Scan(columnPointers...)
-	// 		if err != nil {
-	// 			panic(err)
-	// 		}
+		// Transfer them to the table.
+		row := table.GetRowCount()
 
-	// 		// Transfer them to the table.
-	// 		row := table.GetRowCount()
-	// 		for index, column := range columns {
-	// 			switch value := column.(type) {
-	// 			case int64:
-	// 				table.SetCell(row, index, &tview.TableCell{Text: strconv.Itoa(int(value)), Align: tview.AlignRight, Color: tcell.ColorDarkCyan})
-	// 			case float64:
-	// 				table.SetCell(row, index, &tview.TableCell{Text: strconv.FormatFloat(value, 'f', 2, 64), Align: tview.AlignRight, Color: tcell.ColorDarkCyan})
-	// 			case string:
-	// 				table.SetCellSimple(row, index, value)
-	// 			case time.Time:
-	// 				t := value.Format("2006-01-02")
-	// 				table.SetCell(row, index, &tview.TableCell{Text: t, Align: tview.AlignRight, Color: tcell.ColorDarkMagenta})
-	// 			case []uint8:
-	// 				str := make([]byte, len(value))
-	// 				for index, num := range value {
-	// 					str[index] = byte(num)
-	// 				}
-	// 				table.SetCell(row, index, &tview.TableCell{Text: string(str), Align: tview.AlignRight, Color: tcell.ColorGreen})
-	// 			case nil:
-	// 				table.SetCell(row, index, &tview.TableCell{Text: "NULL", Align: tview.AlignCenter, Color: tcell.ColorRed})
-	// 			default:
-	// 				// We've encountered a type that we don't know yet.
-	// 				t := reflect.TypeOf(value)
-	// 				str := "?nil?"
-	// 				if t != nil {
-	// 					str = "?" + t.String() + "?"
-	// 				}
-	// 				table.SetCellSimple(row, index, str)
-	// 			}
-	// 		}
-	// 	}
-	// 	if err := rows.Err(); err != nil {
-	// 		panic(err)
-	// 	}
+		for {
+			rd, err := iter.RowData()
+			if err != nil {
+				panic(err)
+			}
 
-	// 	// Show how much we've loaded.
-	// 	frame.Clear()
-	// 	loadMore := ""
-	// 	if table.GetRowCount()-1 < rowCount {
-	// 		loadMore = " - press Enter to load more"
-	// 	}
-	// 	loadMore = fmt.Sprintf("Loaded %d of %d rows%s", table.GetRowCount()-1, rowCount, loadMore)
-	// 	frame.AddText(loadMore, false, tview.AlignCenter, tcell.ColorYellow)
-	// }
+			if !iter.Scan(rd.Values...) {
+				break
+			}
 
-	// // Load the first batch of rows.
-	// loadRows(0)
+			for index, value := range rd.Values {
+				switch columns[index].TypeInfo.Type() {
+				case gocql.TypeBigInt:
+					table.SetCell(row, index, &tview.TableCell{Text: strconv.Itoa(int(*value.(*int64))), Align: tview.AlignRight, Color: tcell.ColorDarkCyan})
+				case gocql.TypeFloat:
+					table.SetCell(row, index, &tview.TableCell{Text: strconv.FormatFloat(*value.(*float64), 'f', 2, 64), Align: tview.AlignRight, Color: tcell.ColorDarkCyan})
+				case gocql.TypeVarchar:
+					table.SetCellSimple(row, index, *value.(*string))
+				// case 0x000B:
+				// 	t := value.Format("2006-01-02")
+				// 	table.SetCell(row, index, &tview.TableCell{Text: t, Align: tview.AlignRight, Color: tcell.ColorDarkMagenta})
+				// case []uint8:
+				// 	str := make([]byte, len(value))
+				// 	for index, num := range value {
+				// 		str[index] = byte(num)
+				// 	}
+				// 	table.SetCell(row, index, &tview.TableCell{Text: string(str), Align: tview.AlignRight, Color: tcell.ColorGreen})
+				default:
+					// We've encountered a type that we don't know yet.
+					t := reflect.TypeOf(value)
+					str := "?nil?"
+					if t != nil {
+						str = "?" + t.String() + "?"
+					}
+					table.SetCellSimple(row, index, str)
+				}
+			}
+		}
+
+		// Show how much we've loaded.
+		frame.Clear()
+		loadMore := ""
+		if table.GetRowCount()-1 < rowCount {
+			loadMore = " - press Enter to load more"
+		}
+		loadMore = fmt.Sprintf("Loaded %d of %d rows%s", table.GetRowCount()-1, rowCount, loadMore)
+		frame.AddText(loadMore, false, tview.AlignCenter, tcell.ColorYellow)
+	}
+
+	// Load the first batch of rows.
+	loadRows(0)
 
 	// Handle key presses.
 	table.SetDoneFunc(func(key tcell.Key) {
@@ -335,5 +330,5 @@ func content(db *gocql.Session, dbName, tableName string) {
 	})
 
 	// Add a new page and show it.
-	pages.AddPage(dbName+"."+tableName, frame, true, true)
+	pages.AddPage(keyspaceName+"."+tableName, frame, true, true)
 }
