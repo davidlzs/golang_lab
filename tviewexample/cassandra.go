@@ -208,6 +208,8 @@ func finder(connString string) {
 }
 
 // Shows the contents of the given table.
+
+// TODO: Cassandra pagination: http://www.inanzzz.com/index.php/post/t7fd/cassandra-pagination-example-with-golang
 func content(db *gocql.Session, keyspaceName, tableName string) {
 	finderFocus = app.GetFocus()
 
