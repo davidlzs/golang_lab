@@ -231,6 +231,7 @@ func content(db *gocql.Session, keyspaceName, tableName string) {
 
 	// How many rows does this table have?
 	var rowCount int
+	rowNumber := 1
 	fullyQualifiedTableName := fmt.Sprintf("%s.%s", keyspaceName, tableName)
 	ctx := context.Background()
 	err := db.Query(fmt.Sprintf("select count(*) from %s", fullyQualifiedTableName)).
@@ -240,15 +241,19 @@ func content(db *gocql.Session, keyspaceName, tableName string) {
 	}
 
 	// Load a batch of rows.
-	loadRows := func(offset int) {
+	loadRows := func(pageSize int, pageState []byte) []byte {
 
-		iter := db.Query(fmt.Sprintf(`select persistence_id from %s`, fullyQualifiedTableName)).
-			WithContext(ctx).Iter()
+		//		iter := db.Query(fmt.Sprintf(`select persistence_id from %s`, fullyQualifiedTableName)).
+		iter := db.Query(fmt.Sprintf(`select persistence_id, partition_nr, sequence_nr, ser_id, event from %s`, fullyQualifiedTableName)).
+			WithContext(ctx).PageSize(pageSize).PageState(pageState).Iter()
+		defer iter.Close()
+		pageState = iter.PageState()
 		columns := iter.Columns()
+		table.SetCell(0, 0, &tview.TableCell{Text: "row_number", Align: tview.AlignCenter, Color: tcell.ColorYellow})
 		for index, columnInfo := range columns {
 			name := columnInfo.Name
 			// fmt.Fprintf(w, "%s (%s)", columnInfo.Name, columnInfo.TypeInfo)
-			table.SetCell(0, index, &tview.TableCell{Text: name, Align: tview.AlignCenter, Color: tcell.ColorYellow})
+			table.SetCell(0, index+1, &tview.TableCell{Text: name, Align: tview.AlignCenter, Color: tcell.ColorYellow})
 		}
 
 		// The first row in the table is the list of column names.
@@ -260,10 +265,9 @@ func content(db *gocql.Session, keyspaceName, tableName string) {
 		// 	table.SetCell(0, index, &tview.TableCell{Text: name, Align: tview.AlignCenter, Color: tcell.ColorYellow})
 		// }
 
-		// Transfer them to the table.
-		row := table.GetRowCount()
-
 		for {
+			// Transfer them to the table.
+			row := table.GetRowCount()
 			rd, err := iter.RowData()
 			if err != nil {
 				panic(err)
@@ -273,23 +277,29 @@ func content(db *gocql.Session, keyspaceName, tableName string) {
 				break
 			}
 
+			table.SetCell(row, 0, &tview.TableCell{Text: strconv.Itoa(rowNumber), Align: tview.AlignRight, Color: tcell.ColorWhite})
+			rowNumber++
 			for index, value := range rd.Values {
+				pos := index + 1
 				switch columns[index].TypeInfo.Type() {
 				case gocql.TypeBigInt:
-					table.SetCell(row, index, &tview.TableCell{Text: strconv.Itoa(int(*value.(*int64))), Align: tview.AlignRight, Color: tcell.ColorDarkCyan})
+					table.SetCell(row, pos, &tview.TableCell{Text: strconv.Itoa(int(*value.(*int64))), Align: tview.AlignRight, Color: tcell.ColorWhite})
+				case gocql.TypeInt:
+					table.SetCell(row, pos, &tview.TableCell{Text: strconv.Itoa(int(*value.(*int))), Align: tview.AlignRight, Color: tcell.ColorWhite})
 				case gocql.TypeFloat:
-					table.SetCell(row, index, &tview.TableCell{Text: strconv.FormatFloat(*value.(*float64), 'f', 2, 64), Align: tview.AlignRight, Color: tcell.ColorDarkCyan})
+					table.SetCell(row, pos, &tview.TableCell{Text: strconv.FormatFloat(*value.(*float64), 'f', 2, 64), Align: tview.AlignRight, Color: tcell.ColorWhite})
 				case gocql.TypeVarchar:
-					table.SetCellSimple(row, index, *value.(*string))
+					table.SetCellSimple(row, pos, *value.(*string))
 				// case 0x000B:
 				// 	t := value.Format("2006-01-02")
 				// 	table.SetCell(row, index, &tview.TableCell{Text: t, Align: tview.AlignRight, Color: tcell.ColorDarkMagenta})
-				// case []uint8:
-				// 	str := make([]byte, len(value))
-				// 	for index, num := range value {
-				// 		str[index] = byte(num)
-				// 	}
-				// 	table.SetCell(row, index, &tview.TableCell{Text: string(str), Align: tview.AlignRight, Color: tcell.ColorGreen})
+				case gocql.TypeBlob:
+					val := *value.(*[]byte)
+					str := make([]byte, len(val))
+					for index, num := range val {
+						str[index] = byte(num)
+					}
+					table.SetCell(row, pos, &tview.TableCell{Text: string(str), Align: tview.AlignRight, Color: tcell.ColorGreen})
 				default:
 					// We've encountered a type that we don't know yet.
 					t := reflect.TypeOf(value)
@@ -310,10 +320,13 @@ func content(db *gocql.Session, keyspaceName, tableName string) {
 		}
 		loadMore = fmt.Sprintf("Loaded %d of %d rows%s", table.GetRowCount()-1, rowCount, loadMore)
 		frame.AddText(loadMore, false, tview.AlignCenter, tcell.ColorYellow)
+		return pageState
 	}
 
 	// Load the first batch of rows.
-	loadRows(0)
+	var pageState []byte
+	pageSize := 25
+	pageState = loadRows(pageSize, pageState)
 
 	// Handle key presses.
 	table.SetDoneFunc(func(key tcell.Key) {
@@ -325,9 +338,11 @@ func content(db *gocql.Session, keyspaceName, tableName string) {
 				app.SetFocus(finderFocus)
 			}
 		case tcell.KeyEnter:
-			// Load the next batch of rows.
-			// loadRows(table.GetRowCount() - 1)
-			table.ScrollToEnd()
+			if table.GetRowCount()-1 < rowCount {
+				// Load the next batch of rows.
+				pageState = loadRows(pageSize, pageState)
+				table.ScrollToEnd()
+			}
 		}
 	})
 
