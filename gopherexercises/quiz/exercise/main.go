@@ -16,19 +16,31 @@ type quizItem struct {
 	answer   string
 }
 
+type quiz struct {
+	filePath  string
+	questions []quizItem
+	duration  time.Duration
+}
+
 func main() {
 	quizFilePathPtr := flag.String("f", "problems.csv", "Quiz problem file path")
 	quizTimeLimitPtr := flag.Int("timelimit", 30, "Quiz time limit in seconds")
 
-	questions, err := loadQuiz(*quizFilePathPtr)
-	if err != nil {
-		panic(err)
+	quiz := quiz{
+		filePath: *quizFilePathPtr,
+		duration: time.Duration(*quizTimeLimitPtr) * time.Second,
 	}
 
-	timer := time.NewTimer(time.Duration(*quizTimeLimitPtr) * time.Second)
+	(&quiz).Start()
+}
+
+func (quiz *quiz) Start() {
+	quiz.loadQuiz(quiz.filePath)
+
+	timer := time.NewTimer(quiz.duration)
 
 	ch := make(chan string)
-	go run(ch, questions)
+	go quiz.run(ch)
 
 	for {
 		select {
@@ -39,17 +51,17 @@ func main() {
 				fmt.Println("Done")
 				os.Exit(0)
 			} else if strings.Compare("TimeOut", msg) == 0 {
-				fmt.Printf("Time Out. %d seconds.\n", *quizTimeLimitPtr)
+				fmt.Printf("Time Out. %v.\n", quiz.duration)
 				os.Exit(1)
 			}
 		}
 	}
 }
 
-func run(ch chan string, questions []quizItem) {
+func (quiz *quiz) run(ch chan string) {
 	var correctCount int
 	reader := bufio.NewReader(os.Stdin)
-	for _, question := range questions {
+	for _, question := range quiz.questions {
 		stdinCh := make(chan string)
 		go func(ch chan string) {
 			text, _ := reader.ReadString('\n')
@@ -60,7 +72,7 @@ func run(ch chan string, questions []quizItem) {
 
 		select {
 		case <-ch:
-			fmt.Printf("\nYou scored %d out of %d\n", correctCount, len(questions))
+			fmt.Printf("\nYou scored %d out of %d\n", correctCount, len(quiz.questions))
 			ch <- "TimeOut"
 			return
 		case answer := <-stdinCh:
@@ -70,20 +82,19 @@ func run(ch chan string, questions []quizItem) {
 		}
 	}
 
-	fmt.Printf("You scored %d out of %d\n", correctCount, len(questions))
+	fmt.Printf("You scored %d out of %d\n", correctCount, len(quiz.questions))
 	ch <- "Done"
 }
 
-func loadQuiz(filePath string) ([]quizItem, error) {
-	var quizItems []quizItem
+func (quiz *quiz) loadQuiz(filePath string) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 	defer file.Close()
 	records, err := csv.NewReader(file).ReadAll()
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	for index, record := range records {
@@ -92,8 +103,6 @@ func loadQuiz(filePath string) ([]quizItem, error) {
 			question: record[0],
 			answer:   record[1],
 		}
-		quizItems = append(quizItems, item)
+		quiz.questions = append(quiz.questions, item)
 	}
-
-	return quizItems, nil
 }
