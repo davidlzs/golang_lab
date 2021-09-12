@@ -9,6 +9,7 @@ import (
 )
 
 type quizItem struct {
+	index    string
 	question string
 	answer   string
 }
@@ -32,17 +33,15 @@ func main() {
 	var correctCount int
 	reader := bufio.NewReader(os.Stdin)
 	for _, question := range questions {
-		fmt.Println(question.question)
+		fmt.Printf("Question#%s %s=", question.index, question.question)
 		text, _ := reader.ReadString('\n')
 		if strings.Compare(question.answer, strings.TrimSuffix(text, "\n")) == 0 {
-			fmt.Println("correct")
 			correctCount++
 		} else {
-			fmt.Println("incorrect")
 		}
 	}
 
-	fmt.Printf("Correct: %d of total: %d\n", correctCount, len(questions))
+	fmt.Printf("You scored %d out of %d\n", correctCount, len(questions))
 
 }
 
@@ -58,8 +57,9 @@ func loadQuiz(filePath string) ([]quizItem, error) {
 		return nil, err
 	}
 
-	for _, record := range records {
+	for index, record := range records {
 		item := quizItem{
+			index:    fmt.Sprintf("%d", index+1),
 			question: record[0],
 			answer:   record[1],
 		}
