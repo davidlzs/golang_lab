@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -16,22 +17,15 @@ type quizItem struct {
 }
 
 func main() {
-	quizFilePath := "problems.csv"
-	if len(os.Args) > 1 {
-		if strings.Compare(os.Args[1], "-f") != 0 {
-			fmt.Println("quiz -f <problems.csv>")
-			os.Exit(1)
-		} else {
-			quizFilePath = os.Args[2]
-		}
-	}
+	quizFilePathPtr := flag.String("f", "problems.csv", "Quiz problem file path")
+	quizTimeLimitPtr := flag.Int("timelimit", 30, "Quiz time limit in seconds")
 
-	questions, err := loadQuiz(quizFilePath)
+	questions, err := loadQuiz(*quizFilePathPtr)
 	if err != nil {
 		panic(err)
 	}
 
-	timer := time.NewTimer(30 * time.Second)
+	timer := time.NewTimer(time.Duration(*quizTimeLimitPtr) * time.Second)
 
 	ch := make(chan string)
 	go run(ch, questions)
@@ -45,7 +39,7 @@ func main() {
 				fmt.Println("Done")
 				os.Exit(0)
 			} else if strings.Compare("TimeOut", msg) == 0 {
-				fmt.Println("Time Out")
+				fmt.Printf("Time Out. %d seconds.\n", *quizTimeLimitPtr)
 				os.Exit(1)
 			}
 		}
