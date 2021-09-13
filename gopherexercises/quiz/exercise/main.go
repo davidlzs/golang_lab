@@ -26,6 +26,7 @@ type quiz struct {
 func main() {
 	quizFilePathPtr := flag.String("f", "problems.csv", "Quiz problem file path")
 	quizTimeLimitPtr := flag.Int("timelimit", 30, "Quiz time limit in seconds")
+	flag.Parse()
 
 	quiz := quiz{
 		filePath: *quizFilePathPtr,
