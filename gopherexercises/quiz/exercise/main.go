@@ -17,9 +17,10 @@ type quizItem struct {
 }
 
 type quiz struct {
-	filePath  string
-	questions []quizItem
-	duration  time.Duration
+	filePath     string
+	questions    []quizItem
+	duration     time.Duration
+	correctCount int
 }
 
 func main() {
@@ -68,7 +69,6 @@ func (quiz *quiz) run(ch chan string) {
 		close(ch)
 		close(stdinCh)
 	}()
-	var correctCount int
 	reader := bufio.NewReader(os.Stdin)
 	for _, question := range quiz.questions {
 
@@ -81,17 +81,17 @@ func (quiz *quiz) run(ch chan string) {
 
 		select {
 		case <-ch:
-			fmt.Printf("\nYou scored %d out of %d\n", correctCount, len(quiz.questions))
+			fmt.Printf("\nYou scored %d out of %d\n", quiz.correctCount, len(quiz.questions))
 			ch <- "TimeOut"
 			return
 		case answer := <-stdinCh:
 			if strings.Compare(question.answer, strings.TrimSuffix(answer, "\n")) == 0 {
-				correctCount++
+				quiz.correctCount++
 			}
 		}
 	}
 
-	fmt.Printf("You scored %d out of %d\n", correctCount, len(quiz.questions))
+	fmt.Printf("You scored %d out of %d\n", quiz.correctCount, len(quiz.questions))
 	ch <- "Done"
 }
 
