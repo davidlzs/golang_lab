@@ -37,6 +37,10 @@ func main() {
 func (quiz *quiz) Start() {
 	quiz.loadQuiz(quiz.filePath)
 
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Presss 'Enter' to start the quiz")
+	reader.ReadString('\n')
+
 	timer := time.NewTimer(quiz.duration)
 
 	ch := make(chan string)
@@ -59,10 +63,15 @@ func (quiz *quiz) Start() {
 }
 
 func (quiz *quiz) run(ch chan string) {
+	stdinCh := make(chan string)
+	defer func() {
+		close(ch)
+		close(stdinCh)
+	}()
 	var correctCount int
 	reader := bufio.NewReader(os.Stdin)
 	for _, question := range quiz.questions {
-		stdinCh := make(chan string)
+
 		go func(ch chan string) {
 			text, _ := reader.ReadString('\n')
 			ch <- text
