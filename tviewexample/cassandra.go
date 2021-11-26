@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/gocql/gocql"
@@ -87,115 +88,120 @@ func finder(connString string) {
 		if err := rows.Scan(&keyspaceName); err != nil {
 			panic(err)
 		}
-		databases.AddItem(keyspaceName, "", 0, func() {
-			// A database was selected. Show all of its tables.
-			columns.Clear()
-			tables.Clear()
-			db := GetSession(keyspaceName)
 
-			t := db.Query(`select table_name from system_schema.tables where keyspace_name=?`,
-				keyspaceName).
-				WithContext(ctx).Iter().Scanner()
-			for t.Next() {
-				var tableName string
-				if err := t.Scan(&tableName); err != nil {
+		if strings.HasSuffix(strings.ToLower(keyspaceName), "journal") {
+			databases.AddItem(keyspaceName, "", 0, func() {
+				// A database was selected. Show all of its tables.
+				columns.Clear()
+				tables.Clear()
+				db := GetSession(keyspaceName)
+
+				t := db.Query(`select table_name from system_schema.tables where keyspace_name=?`,
+					keyspaceName).
+					WithContext(ctx).Iter().Scanner()
+				for t.Next() {
+					var tableName string
+					if err := t.Scan(&tableName); err != nil {
+						panic(err)
+					}
+					if strings.EqualFold(tableName, "messages") {
+						tables.AddItem(tableName, "", 0, nil)
+					}
+				}
+				if err := t.Err(); err != nil {
 					panic(err)
 				}
-				tables.AddItem(tableName, "", 0, nil)
-			}
-			if err := t.Err(); err != nil {
-				panic(err)
-			}
-			app.SetFocus(tables)
+				app.SetFocus(tables)
 
-			// When the user navigates to a table, show its columns.
-			tables.SetChangedFunc(func(i int, tableName string, t string, s rune) {
-				// A table was selected. Show its columns.
-				columns.Clear()
+				// When the user navigates to a table, show its columns.
+				tables.SetChangedFunc(func(i int, tableName string, t string, s rune) {
+					// A table was selected. Show its columns.
+					columns.Clear()
 
-				// stat, err := db.Prepare(`
-				// select c.column_name,
-				// 	c.is_nullable,
-				// 	c.data_type,
-				// 	c.character_maximum_length,
-				// 	c.numeric_precision,
-				// 	c.numeric_scale,
-				// 	c.ordinal_position,
-				// 	k.constraint_name
-				// from INFORMATION_SCHEMA.columns c
-				// left join information_schema.key_column_usage k
-				// 	on c.table_schema = k.table_schema and c.table_name = k.table_name and c.column_name = k.column_name AND k.constraint_name='PRIMARY'
-				// where c.table_schema = ?
-				// and c.table_name = ?
-				// 		`)
-				// if err != nil {
-				// 	panic(err)
-				// }
+					// stat, err := db.Prepare(`
+					// select c.column_name,
+					// 	c.is_nullable,
+					// 	c.data_type,
+					// 	c.character_maximum_length,
+					// 	c.numeric_precision,
+					// 	c.numeric_scale,
+					// 	c.ordinal_position,
+					// 	k.constraint_name
+					// from INFORMATION_SCHEMA.columns c
+					// left join information_schema.key_column_usage k
+					// 	on c.table_schema = k.table_schema and c.table_name = k.table_name and c.column_name = k.column_name AND k.constraint_name='PRIMARY'
+					// where c.table_schema = ?
+					// and c.table_name = ?
+					// 		`)
+					// if err != nil {
+					// 	panic(err)
+					// }
 
-				// c, err := stat.Query(keyspaceName, tableName)
-				// if err != nil {
-				// 	panic(err)
-				// }
-				// defer c.Close()
-				// columns.SetCell(0, 0, &tview.TableCell{Text: "Name", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
-				// 	SetCell(0, 1, &tview.TableCell{Text: "Type", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
-				// 	SetCell(0, 2, &tview.TableCell{Text: "Size", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
-				// 	SetCell(0, 3, &tview.TableCell{Text: "Null", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
-				// 	SetCell(0, 4, &tview.TableCell{Text: "Constraint", Align: tview.AlignCenter, Color: tcell.ColorYellow})
-				// for c.Next() {
-				// 	var (
-				// 		columnName, isNullable, dataType     string
-				// 		constraintType                       sql.NullString
-				// 		size, numericPrecision, numericScale sql.NullInt64
-				// 		ordinalPosition                      int
-				// 	)
-				// 	if err := c.Scan(&columnName,
-				// 		&isNullable,
-				// 		&dataType,
-				// 		&size,
-				// 		&numericPrecision,
-				// 		&numericScale,
-				// 		&ordinalPosition,
-				// 		&constraintType,
-				// 	); err != nil {
-				// 		panic(err)
-				// 	}
-				// 	sizeText := ""
-				// 	if size.Valid {
-				// 		sizeText = strconv.Itoa(int(size.Int64))
-				// 	} else if numericPrecision.Valid {
-				// 		sizeText = strconv.Itoa(int(numericPrecision.Int64))
-				// 		if numericScale.Valid {
-				// 			sizeText += "," + strconv.Itoa(int(numericScale.Int64))
-				// 		}
-				// 	}
-				// 	color := tcell.ColorWhite
-				// 	if constraintType.Valid {
-				// 		color = map[string]tcell.Color{
-				// 			"CHECK":       tcell.ColorGreen,
-				// 			"FOREIGN KEY": tcell.ColorDarkMagenta,
-				// 			"PRIMARY KEY": tcell.ColorRed,
-				// 			"UNIQUE":      tcell.ColorDarkCyan,
-				// 		}[constraintType.String]
-				// 	}
-				// 	columns.SetCell(ordinalPosition, 0, &tview.TableCell{Text: columnName, Color: color}).
-				// 		SetCell(ordinalPosition, 1, &tview.TableCell{Text: dataType, Color: color}).
-				// 		SetCell(ordinalPosition, 2, &tview.TableCell{Text: sizeText, Align: tview.AlignRight, Color: color}).
-				// 		SetCell(ordinalPosition, 3, &tview.TableCell{Text: isNullable, Align: tview.AlignRight, Color: color}).
-				// 		SetCell(ordinalPosition, 4, &tview.TableCell{Text: constraintType.String, Align: tview.AlignLeft, Color: color})
-				// }
-				// if err := c.Err(); err != nil {
-				// 	panic(err)
-				// }
+					// c, err := stat.Query(keyspaceName, tableName)
+					// if err != nil {
+					// 	panic(err)
+					// }
+					// defer c.Close()
+					// columns.SetCell(0, 0, &tview.TableCell{Text: "Name", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
+					// 	SetCell(0, 1, &tview.TableCell{Text: "Type", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
+					// 	SetCell(0, 2, &tview.TableCell{Text: "Size", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
+					// 	SetCell(0, 3, &tview.TableCell{Text: "Null", Align: tview.AlignCenter, Color: tcell.ColorYellow}).
+					// 	SetCell(0, 4, &tview.TableCell{Text: "Constraint", Align: tview.AlignCenter, Color: tcell.ColorYellow})
+					// for c.Next() {
+					// 	var (
+					// 		columnName, isNullable, dataType     string
+					// 		constraintType                       sql.NullString
+					// 		size, numericPrecision, numericScale sql.NullInt64
+					// 		ordinalPosition                      int
+					// 	)
+					// 	if err := c.Scan(&columnName,
+					// 		&isNullable,
+					// 		&dataType,
+					// 		&size,
+					// 		&numericPrecision,
+					// 		&numericScale,
+					// 		&ordinalPosition,
+					// 		&constraintType,
+					// 	); err != nil {
+					// 		panic(err)
+					// 	}
+					// 	sizeText := ""
+					// 	if size.Valid {
+					// 		sizeText = strconv.Itoa(int(size.Int64))
+					// 	} else if numericPrecision.Valid {
+					// 		sizeText = strconv.Itoa(int(numericPrecision.Int64))
+					// 		if numericScale.Valid {
+					// 			sizeText += "," + strconv.Itoa(int(numericScale.Int64))
+					// 		}
+					// 	}
+					// 	color := tcell.ColorWhite
+					// 	if constraintType.Valid {
+					// 		color = map[string]tcell.Color{
+					// 			"CHECK":       tcell.ColorGreen,
+					// 			"FOREIGN KEY": tcell.ColorDarkMagenta,
+					// 			"PRIMARY KEY": tcell.ColorRed,
+					// 			"UNIQUE":      tcell.ColorDarkCyan,
+					// 		}[constraintType.String]
+					// 	}
+					// 	columns.SetCell(ordinalPosition, 0, &tview.TableCell{Text: columnName, Color: color}).
+					// 		SetCell(ordinalPosition, 1, &tview.TableCell{Text: dataType, Color: color}).
+					// 		SetCell(ordinalPosition, 2, &tview.TableCell{Text: sizeText, Align: tview.AlignRight, Color: color}).
+					// 		SetCell(ordinalPosition, 3, &tview.TableCell{Text: isNullable, Align: tview.AlignRight, Color: color}).
+					// 		SetCell(ordinalPosition, 4, &tview.TableCell{Text: constraintType.String, Align: tview.AlignLeft, Color: color})
+					// }
+					// if err := c.Err(); err != nil {
+					// 	panic(err)
+					// }
+				})
+				tables.SetCurrentItem(0) // Trigger the initial selection.
+
+				// When the user selects a table, show its content.
+				tables.SetSelectedFunc(func(i int, tableName string, t string, s rune) {
+					session := GetSession(keyspaceName)
+					content(session, keyspaceName, tableName)
+				})
 			})
-			tables.SetCurrentItem(0) // Trigger the initial selection.
-
-			// When the user selects a table, show its content.
-			tables.SetSelectedFunc(func(i int, tableName string, t string, s rune) {
-				session := GetSession(keyspaceName)
-				content(session, keyspaceName, tableName)
-			})
-		})
+		}
 	}
 	if err := rows.Err(); err != nil {
 		panic(err)
